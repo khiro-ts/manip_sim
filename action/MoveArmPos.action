@@ -1,4 +1,5 @@
-float64[] target_joint_values
+int32 target_type  # 0: joint 1: pose
+float64[] target_values
 ---
 bool success
 ---
