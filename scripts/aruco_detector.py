@@ -59,7 +59,7 @@ class ArUcoDetector:
 
             rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(corners[index], markerLength=0.15, cameraMatrix=self.camera_mtx, distCoeffs=self.dist_coeff)
             
-            rospy.loginfo("ArUco marker id {}: at {}, {}".format(self.marker_id_to_detect, rvec, tvec))
+            rospy.loginfo("ArUco marker id {}: at {}, {}".format(self.marker_id_to_detect, rvec[0][0], tvec[0][0]))
             cv2.drawFrameAxes(cv_img, self.camera_mtx, self.dist_coeff, rvec, tvec, 0.15/2)
             cv2.putText(cv_img, "ID:{}".format(self.marker_id_to_detect), tuple(corners_of_detected_marker[0].astype(int)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 0), 2)
             cv2.drawContours(cv_img, [corners_of_detected_marker.astype(int)], 0, (0, 200, 0), 2)
