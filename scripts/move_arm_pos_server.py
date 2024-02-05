@@ -47,6 +47,7 @@ class MoveArmPosServer:
         elif goal.target_type == 1:
             move_group.set_pose_reference_frame("arm_base_link")
             current_pose = move_group.get_current_pose(end_effector_link="Link6")
+            move_group.set_start_state_to_current_state()
             rospy.loginfo("current pose: {}".format(current_pose))
             goal_pose = self.set_goal_pose(current_pose.pose, goal.target_values)
             rospy.loginfo("goal pose: {}".format(goal_pose))
