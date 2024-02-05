@@ -8,7 +8,7 @@ from moveit_commander import PlanningSceneInterface
 from moveit_msgs.msg import RobotState, DisplayRobotState, DisplayTrajectory
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import PoseStamped
 
 from manip_sim.msg import MoveArmPosAction, MoveArmPosGoal, MoveArmPosResult, MoveArmPosFeedback
 
@@ -21,14 +21,15 @@ class MoveArmPosServer:
         self.server.start()
     
     def set_goal_pose(self, current_pose, offset):
-        goal_pose = Pose()
-        goal_pose.position.x = current_pose.position.x + offset[0]
-        goal_pose.position.y = current_pose.position.y + offset[1]
-        goal_pose.position.z = current_pose.position.z + offset[2]
-        goal_pose.orientation.x = current_pose.orientation.x + offset[3]
-        goal_pose.orientation.y = current_pose.orientation.y + offset[4]
-        goal_pose.orientation.z = current_pose.orientation.z + offset[5]
-        goal_pose.orientation.w = current_pose.orientation.w + offset[6]
+        goal_pose = PoseStamped()
+        goal_pose.header.frame_id = "arm_base_link"
+        goal_pose.pose.position.x = current_pose.position.x + offset[0]
+        goal_pose.pose.position.y = current_pose.position.y + offset[1]
+        goal_pose.pose.position.z = current_pose.position.z + offset[2]
+        goal_pose.pose.orientation.x = current_pose.orientation.x + offset[3]
+        goal_pose.pose.orientation.y = current_pose.orientation.y + offset[4]
+        goal_pose.pose.orientation.z = current_pose.orientation.z + offset[5]
+        goal_pose.pose.orientation.w = current_pose.orientation.w + offset[6]
 
         return goal_pose
 
@@ -44,7 +45,7 @@ class MoveArmPosServer:
         if goal.target_type == 0:
             move_group.set_joint_value_target(goal.target_values)
         elif goal.target_type == 1:
-            move_group.set_pose_reference_frame("Link1")
+            move_group.set_pose_reference_frame("arm_base_link")
             current_pose = move_group.get_current_pose(end_effector_link="Link6")
             rospy.loginfo("current pose: {}".format(current_pose))
             goal_pose = self.set_goal_pose(current_pose.pose, goal.target_values)
@@ -58,7 +59,12 @@ class MoveArmPosServer:
             return
 
         ret, trajectory, planning_time, err = move_group.plan()
-        rospy.loginfo(trajectory)
+        if not ret:
+            result = MoveArmPosResult()
+            result.success = False
+            self.server.set_aborted(result)
+            return
+
         move_group.execute(trajectory, wait=True)
         
         current_joints = rospy.wait_for_message(self.joint_states_topic, JointState, timeout=5.0)

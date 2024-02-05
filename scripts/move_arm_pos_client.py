@@ -11,7 +11,7 @@ from manip_sim.msg import MoveArmPosAction, MoveArmPosGoal, MoveArmPosResult, Mo
 
 search_joint_state = [1.9151516, 1.7367947, -0.8863478, -2.8018741, 1.3113430, 2.9991712]
 
-offset_wrt_aruco = [.3, 0., .2, 0., 0., 0., 0.]
+offset_wrt_aruco = [.3, 0., -.3, 0., 0., 0., 0.]
 
 def move_arm_pos_client(target_type:int, goal_value):
 

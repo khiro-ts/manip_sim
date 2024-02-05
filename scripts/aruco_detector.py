@@ -3,7 +3,10 @@
 import numpy as np
 
 import rospy
-from sensor_msgs.msg import Image
+import transformations as tf_trans
+import tf2_ros
+from geometry_msgs.msg import TransformStamped
+from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 from cv2 import aruco
@@ -21,7 +24,22 @@ class ArUcoDetector:
         self.bridge = CvBridge()
         self.marker_id_to_detect = id
         self.image_sub = rospy.Subscriber("/fingercam/color/image_raw", Image, self.image_callback)
+        self.camera_mtx = []
+        self.dist_coeff = []
+        self.frame_id = ""
+        self.caminfo_sub = rospy.Subscriber("/fingercam/color/camera_info", CameraInfo, self.caminfo_callback)
+        self.tf_broad = tf2_ros.TransformBroadcaster()
         rospy.loginfo("searching for ArUco marker id {} ...".format(self.marker_id_to_detect))
+
+    def caminfo_callback(self, msg):
+        self.camera_mtx = np.array(msg.K, dtype=np.float32).reshape((3,3))
+        #self.dist_coeff = np.array(msg.D, dtype=np.float64)
+        self.dist_coeff = np.zeros((4,1))
+        self.frame_id = msg.header.frame_id
+        rospy.loginfo("camera_mtx {}".format(self.camera_mtx))
+        rospy.loginfo("camera_dist_coeff {}".format(self.dist_coeff))
+
+        self.caminfo_sub.unregister()
         
     def image_callback(self, msg):
         try:
@@ -38,9 +56,11 @@ class ArUcoDetector:
         if ids is not None and self.marker_id_to_detect in ids:
             index = np.where(ids == self.marker_id_to_detect)[0][0]
             corners_of_detected_marker = corners[index][0]
-            
-            rospy.loginfo("ArUco marker id {}: at {}".format(self.marker_id_to_detect, corners_of_detected_marker))
 
+            rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(corners[index], markerLength=0.15, cameraMatrix=self.camera_mtx, distCoeffs=self.dist_coeff)
+            
+            rospy.loginfo("ArUco marker id {}: at {}, {}".format(self.marker_id_to_detect, rvec, tvec))
+            cv2.drawFrameAxes(cv_img, self.camera_mtx, self.dist_coeff, rvec, tvec, 0.15/2)
             cv2.putText(cv_img, "ID:{}".format(self.marker_id_to_detect), tuple(corners_of_detected_marker[0].astype(int)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 0), 2)
             cv2.drawContours(cv_img, [corners_of_detected_marker.astype(int)], 0, (0, 200, 0), 2)
             
