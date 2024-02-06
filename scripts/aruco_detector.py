@@ -4,7 +4,7 @@ import numpy as np
 
 import rospy
 import transformations as tf_trans
-from tf.transformations import quaternion_from_euler
+from tf.transformations import quaternion_from_euler, quaternion_multiply
 import tf2_ros
 from geometry_msgs.msg import TransformStamped
 from sensor_msgs.msg import Image, CameraInfo
@@ -12,6 +12,7 @@ from cv_bridge import CvBridge, CvBridgeError
 import cv2
 from cv2 import aruco
 
+from tf_util import *
 from move_arm_pos_client import move_arm_pos_client
 
 class ArUcoDetector:
@@ -70,9 +71,11 @@ class ArUcoDetector:
             cv2.putText(cv_img, "ID:{}".format(self.marker_id_to_detect), tuple(corners_of_detected_marker[0].astype(int)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 0), 2)
             cv2.drawContours(cv_img, [corners_of_detected_marker.astype(int)], 0, (0, 200, 0), 2)
 
-            cv2.imshow("ArUco Detector", cv_img)
-            cv2.waitKey(0)
+            #cv2.imshow("ArUco Detector", cv_img)
+            #cv2.waitKey(0)
+            rospy.sleep(2.0)
             
+            # tf from camera to detected marker
             tm = TransformStamped()
             tm.header.stamp = rospy.Time.now()
             tm.header.frame_id = self.frame_id
@@ -84,25 +87,55 @@ class ArUcoDetector:
             tm.transform.rotation.y = quat[1]
             tm.transform.rotation.z = quat[2]
             tm.transform.rotation.w = quat[3]
-            
+
             self.tf_broad.sendTransform(tm)
 
-            tfg = self.tf_buffer.lookup_transform(tm.child_frame_id, "Link6", rospy.Time(), rospy.Duration(3.0))
-            tfc = self.tf_buffer.lookup_transform("ee_link", "base_link", rospy.Time(), rospy.Duration(3.0))
-            print(tfg)
-            print(tfc)
+            # tf from arm_base to marker
+            tbm = self.tf_buffer.lookup_transform("arm_base_link", tm.child_frame_id, rospy.Time(), rospy.Duration(5.0))
+            # tf from camera to endeffector
+            tce = self.tf_buffer.lookup_transform(self.frame_id, "dh_link", rospy.Time())
+            #marker_pose_ee = tf_diff(tce.transform, tm.transform)
+            marker_trans_ee = transform_pose(self.tf_buffer, self.frame_id, "dh_link", tm)
+            #marker_pose_ee = marker_trans_ee.pose
 
-            #offset_wrt_aruco = [tfg.transform.translation.x/2, 
-            #                    tfg.transform.translation.y/2,
-            #                    -tfg.transform.translation.z/2,
-            #                    0.*tfg.transform.rotation.x,
-            #                    0.*tfg.transform.rotation.y,
-            #                    0.*tfg.transform.rotation.z,
-            #                    0.*tfg.transform.rotation.w
+            #offset_wrt_aruco = [marker_pose_ee.position[0], 
+            #                    marker_pose_ee.position[1],
+            #                    marker_pose_ee.position[2],  # ee offset
+            #                    marker_pose_ee.orientation[0],
+            #                    marker_pose_ee.orientation[1],
+            #                    marker_pose_ee.orientation[2],
+            #                    marker_pose_ee.orientation[3]
             #                ]
-                               
 
-            offset_wrt_aruco = [trans[0], trans[1], -trans[2], 0.,0.,0.,0.] #quat[0], quat[1], quat[2], quat[3]]
+            goal_quat = quaternion_from_euler(0, 0, 0, axes='sxyz')
+
+            grip_quat = quaternion_multiply(quat, goal_quat)
+
+            offset_wrt_aruco = [tbm.transform.translation.x, 
+                                tbm.transform.translation.y,
+                                tbm.transform.translation.z+0.2,  # ee offset
+                                grip_quat[0],
+                                grip_quat[1], 
+                                grip_quat[2],
+                                grip_quat[3]
+                            ]
+                               
+            # tf from camera to detected marker
+            tg = TransformStamped()
+            tg.header.stamp = rospy.Time.now()
+            tg.header.frame_id = 'arm_base_link'
+            tg.child_frame_id = 'grip_' + str(self.marker_id_to_detect)
+            tg.transform.translation.x = tbm.transform.translation.x
+            tg.transform.translation.y = tbm.transform.translation.y
+            tg.transform.translation.z = tbm.transform.translation.z+0.2
+            tg.transform.rotation.x = grip_quat[0]
+            tg.transform.rotation.y = grip_quat[1]
+            tg.transform.rotation.z = grip_quat[2]
+            tg.transform.rotation.w = grip_quat[3]
+
+            self.tf_broad.sendTransform(tg)
+
+            #offset_wrt_aruco = [trans[0], trans[1], -trans[2], 0.,0.,0.,0.] #quat[0], quat[1], quat[2], quat[3]]
             result = move_arm_pos_client(1, offset_wrt_aruco)
             rospy.loginfo("arm motion: {}".format(result))
 
