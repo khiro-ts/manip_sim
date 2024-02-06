@@ -21,11 +21,12 @@ class ArUcoDetector:
         self.bridge = CvBridge()
         self.marker_id_to_detect = id
         self.marker_size = 0.15
+        self.is_detect = False
         self.camera_mtx = []
         self.dist_coeff = []
         self.caminfo_sub = rospy.Subscriber("/fingercam/color/camera_info", CameraInfo, self.caminfo_callback)
         self.image_sub = rospy.Subscriber("/fingercam/color/image_raw", Image, self.image_callback)
-        self.image_pub = rospy.Publisher("/fingercam/color/image_raw/detection", Image, queue_size=10)
+        self.image_pub = rospy.Publisher("/fingercam/color/image_raw/detection", Image, queue_size=1)
 
         rospy.loginfo("searching for ArUco marker id {} ...".format(self.marker_id_to_detect))
     
@@ -66,6 +67,8 @@ class ArUcoDetector:
             img_msg = self.bridge.cv2_to_imgmsg(cv_img, "bgr8")
             self.image_pub.publish(img_msg)
 
+            self.is_detect = True
+
     def run(self):
         try:
             rospy.spin()
@@ -76,18 +79,30 @@ class ArUcoDetector:
             
 class SampleDetector(ArUcoDetector):
     def __init__(self):
+
+        rospy.init_node("aruco_detector", anonymous=True)
+
+        # move arm to search pose
+        self.search_pose = [2.2131014, 1.0824423, -1.4139534, -1.7161070, -1.4348431, -0.6246903]
+        rospy.loginfo("move arm to searching pose")
+        result = move_arm_pos_client(0, self.search_pose)
+
+        rospy.sleep(1.0) # wait to finish arm motion 
+        
+        # detection node
         super().__init__(id=0)
         self.frame_id = ""
         self.tf_broad = tf2_ros.TransformBroadcaster()
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
+        self.target_pose = []
 
-        # move arm to search pose
-        rospy.loginfo("move arm to searching pose")
-        self.search_pos = [2.2131014, 1.0824423, -1.4139534, -1.7161070, -1.4348431, -0.6246903]
-        result = move_arm_pos_client(0, self.search_pos)
-        
+
     def image_callback(self, msg):
+
+        if self.is_detect:
+            return
+
         try:
             cv_img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except CvBridgeError as e:
@@ -98,8 +113,9 @@ class SampleDetector(ArUcoDetector):
         aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
         parameters = aruco.DetectorParameters()
         corners, ids, _ = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
-        
+
         if ids is not None and self.marker_id_to_detect in ids:
+
             index = np.where(ids == self.marker_id_to_detect)[0][0]
             corners_of_detected_marker = corners[index][0]
 
@@ -112,12 +128,8 @@ class SampleDetector(ArUcoDetector):
             img_msg = self.bridge.cv2_to_imgmsg(cv_img, "bgr8")
             self.image_pub.publish(img_msg)
 
-            target_pose = self.get_target_pos(rvec[0][0], tvec[0][0])
-            rospy.loginfo("move arm to target pose: {target_pose}")
-            result = move_arm_pos_client(1, target_pose)
-            rospy.loginfo("arm motion: {}".format(result))
-
-            rospy.signal_shutdown("Sample detected")
+            self.target_pose = self.get_target_pos(rvec[0][0], tvec[0][0])
+            self.is_detect = True
 
     def get_target_pos(self, rvec, tvec):
         
@@ -141,8 +153,8 @@ class SampleDetector(ArUcoDetector):
         # tf from arm_base to marker
         tbm = self.tf_buffer.lookup_transform("arm_base_link", tm.child_frame_id, rospy.Time(), rospy.Duration(5.0))
 
-        goal_quat = quaternion_from_euler(0, 0, 0, axes='sxyz')  # for debug
-        grip_quat = quaternion_multiply(quat, goal_quat)
+        #goal_quat = quaternion_from_euler(0, 0, 0, axes='sxyz')  # for debug
+        #grip_quat = quaternion_multiply(quat, goal_quat)
             
         # tf from moveit base to approach position (debug)
         tg = TransformStamped()
@@ -151,25 +163,48 @@ class SampleDetector(ArUcoDetector):
         tg.child_frame_id = 'grip_' + str(self.marker_id_to_detect)
         tg.transform.translation.x = tbm.transform.translation.x
         tg.transform.translation.y = tbm.transform.translation.y
-        tg.transform.translation.z = tbm.transform.translation.z+0.2
-        tg.transform.rotation.x = grip_quat[0]
-        tg.transform.rotation.y = grip_quat[1]
-        tg.transform.rotation.z = grip_quat[2]
-        tg.transform.rotation.w = grip_quat[3]
+        tg.transform.translation.z = tbm.transform.translation.z + 0.2
+        tg.transform.rotation.x = 1.0  #goal_quat[0]  
+        tg.transform.rotation.y = 0.0  #goal_quat[1]  
+        tg.transform.rotation.z = 0.0  #goal_quat[2] 
+        tg.transform.rotation.w = 0.0  #goal_quat[3] 
 
         self.tf_broad.sendTransform(tg)
     
         target_pose = [tbm.transform.translation.x, 
                             tbm.transform.translation.y,
                             tbm.transform.translation.z+0.2,  # ee offset
-                            grip_quat[0],
-                            grip_quat[1], 
-                            grip_quat[2],
-                            grip_quat[3]
+                            1.0,  #goal_quat[0],
+                            0.0,  #goal_quat[1], 
+                            0.0,  #goal_quat[2],
+                            0.0,  #goal_quat[3]
                         ]
 
         return target_pose
 
+    def wait_for_target(self, timeout=5):
+        
+        duration = rospy.Duration(timeout)
+
+        rospy.loginfo("search id {} for {} sec".format(self.marker_id_to_detect, timeout))
+        start = rospy.Time.now()
+        try:
+            while not self.is_detect and not rospy.is_shutdown():
+                if rospy.Time.now() - start > duration:
+                    rospy.logwarn("search timeout")
+                    return False
+                rospy.sleep(0.1)
+
+            rospy.loginfo("move arm to detected target: {}".format(self.target_pose))
+            result = move_arm_pos_client(1, self.target_pose)
+            rospy.loginfo("arm motion: {}".format(result))
+
+            rospy.signal_shutdown("Sample detected")
+
+        except KeyboardInterrupt:
+            rospy.loginfo("Shutting down Sample Detector")
+            cv2.destroyAllWindows()
+
 if __name__ == '__main__':
     td = SampleDetector()
-    td.run()
+    td.wait_for_target()
