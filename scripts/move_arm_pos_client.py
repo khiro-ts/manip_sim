@@ -36,7 +36,7 @@ if __name__ == '__main__':
     
     try:
         rospy.init_node('move_arm_pos_client')
-        result = move_arm_pos_client(1, offset_wrt_aruco)
+        result = move_arm_pos_client(0, search_joint_state)
         print("Result: ", result.success)
         #print("Feedback: ", result.current_joint_values)
     except rospy.ROSInterruptException:
