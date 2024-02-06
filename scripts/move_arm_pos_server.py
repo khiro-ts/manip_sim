@@ -4,11 +4,10 @@ import sys
 import rospy
 import actionlib
 import moveit_commander
-from moveit_commander import PlanningSceneInterface
-from moveit_msgs.msg import RobotState, DisplayRobotState, DisplayTrajectory
+#from moveit_commander import PlanningSceneInterface
+#from moveit_msgs.msg import Constraints, PositionConstraint, BoundingVolume
 from sensor_msgs.msg import JointState
-from std_msgs.msg import String
-from geometry_msgs.msg import Pose, PoseStamped, Transform
+from geometry_msgs.msg import Pose, PoseStamped
 
 from manip_sim.msg import MoveArmPosAction, MoveArmPosGoal, MoveArmPosResult, MoveArmPosFeedback
 
@@ -47,10 +46,8 @@ class MoveArmPosServer:
 
         moveit_commander.roscpp_initialize(sys.argv)
     
-        robot = moveit_commander.RobotCommander()
         group_name = "nova5_arm"
         move_group = moveit_commander.MoveGroupCommander(group_name)
-        scene = PlanningSceneInterface()
 
         if goal.target_type == 0:  # joint move
             move_group.set_joint_value_target(goal.target_values)
