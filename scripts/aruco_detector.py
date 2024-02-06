@@ -96,6 +96,7 @@ class SampleDetector(ArUcoDetector):
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
         self.target_pose = []
+        self.approach_offset = 0.2
 
 
     def image_callback(self, msg):
@@ -163,7 +164,7 @@ class SampleDetector(ArUcoDetector):
         tg.child_frame_id = 'grip_' + str(self.marker_id_to_detect)
         tg.transform.translation.x = tbm.transform.translation.x
         tg.transform.translation.y = tbm.transform.translation.y
-        tg.transform.translation.z = tbm.transform.translation.z + 0.2
+        tg.transform.translation.z = tbm.transform.translation.z + self.approach_offset 
         tg.transform.rotation.x = 1.0  #goal_quat[0]  
         tg.transform.rotation.y = 0.0  #goal_quat[1]  
         tg.transform.rotation.z = 0.0  #goal_quat[2] 
@@ -173,7 +174,7 @@ class SampleDetector(ArUcoDetector):
     
         target_pose = [tbm.transform.translation.x, 
                             tbm.transform.translation.y,
-                            tbm.transform.translation.z+0.2,  # ee offset
+                            tbm.transform.translation.z + self.approach_offset,  
                             1.0,  #goal_quat[0],
                             0.0,  #goal_quat[1], 
                             0.0,  #goal_quat[2],
